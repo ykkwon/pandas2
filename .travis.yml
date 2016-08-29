@@ -1,0 +1,14 @@
+language: python
+python:
+  - 3.5
+
+sudo: false
+
+env:
+  global:
+    - secure: "L8uXQbGKvVvOGMDIqgzIPj++1nO9M97tv/swZMm6uu3GHEj570p0mSWFxHlN97UQdMt+AAHPIEE/tg7ma7TiOANE0KJaD/6zmlfltvQtJZPngoN3xT3UHsNp/BuX2oDhevMV/LprLYygQ6xi5nHqB6Do9FS62zuZoE4UdFuBe+zec3+RSnW5LhfGQVCme4axHgf/j7vQGVKD7vBMyNqbDsqpKWdEr0d+4OhwLZwDM7I3lirWQ2W3DhRciaweI7G4AJZ4nkTXEfC+kZpGM6H1/Ho2ODqFGzbuudXe0VAnKUZxjWx7yb51+nxylKv7Q2UzOxb88loa91zBr729XGAm/RqXAWipO08MrZMbY0xlH7WoXjucsxUDT7bYhHLx+IQmg+2N1hswIqmpDXrv2ADVomt+R74iiV7UigCx3Ke02axiqdliyAMZcRVAl3Zg/jFXtL4JpFV//X1wJphtJuub7DKYiDr38h4Pr2cuR8fsTt1cF40AejXTJ1/W6X7fz2Q+bsCk/tlNmY4IUGPlXO/49AYC1aTIqwwgvzhYLHTtaGM5j1CWwu7P4eT4VYLSMhwj+MJVzQx9f6ZI/5eiZMI+lDzRpw7hPkgU9d5G/BEGcPDGIdVfhHcOVIZxrKV7p9dhF/nqjF3R8ZSV2yD6yHrFDZyWWJtixiAzaLTgxiyiRMs="
+
+script:
+  - pip install sphinx doctr ipython
+  - make html
+  - doctr deploy --built-docs '_build/html'
