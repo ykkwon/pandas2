@@ -1,0 +1,1109 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Internals: Data structure changes &mdash; pandas 2.0 Design Docs 0.1 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+
+  
+    <link rel="top" title="pandas 2.0 Design Docs 0.1 documentation" href="index.html"/>
+        <link rel="next" title="Internals: Enhanced string / UTF-8 handling" href="strings.html"/>
+        <link rel="prev" title="Goals and Motivations" href="goals.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> pandas 2.0 Design Docs
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0.1
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="goals.html">Goals and Motivations</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Internals: Data structure changes</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#logical-types-and-physical-storage-decoupling">Logical types and Physical Storage Decoupling</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#a-motivating-example">A motivating example</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#some-definitions">Some definitions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#high-level-logical-type-proposal">High-level logical type proposal</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#physical-storage-decoupling">Physical storage decoupling</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#correspondence-between-logical-and-physical-types">Correspondence between logical and physical types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#preserving-numpy-interoperability">Preserving NumPy interoperability</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#missing-data-consistency">Missing data consistency</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#a-proposed-solution">A proposed solution</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#tradeoffs">Tradeoffs</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#removal-of-blockmanager-new-dataframe-internals">Removal of BlockManager / new DataFrame internals</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#what-is-blockmanager-and-why-does-it-exist">What is <code class="docutils literal"><span class="pre">BlockManager</span></code> and why does it exist?</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#drawbacks-of-blockmanager">Drawbacks of BlockManager</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#replacing-blockmanager-without-weakening-pandas">Replacing BlockManager without weakening pandas</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#building-libpandas-in-c-11-14-for-lowest-level-implementation-tier">Building &#8220;libpandas&#8221; in C++11/14 for lowest level implementation tier</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#microperformance">Microperformance</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#c-or-c-c-11-to-be-specific">C or C++ (C++11, to be specific)?</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pandas-array-types"><code class="docutils literal"><span class="pre">pandas.Array</span></code> types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#index-types">Index types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pandas-table"><code class="docutils literal"><span class="pre">pandas.Table</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#operators-and-dynamic-dispatch">Operators and dynamic dispatch</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#memory-accounting">Memory accounting</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#development-toolchain">Development toolchain</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#logical-types-for-strings-and-possibly-other-non-numeric-data">Logical types for strings and possibly other non-numeric data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#rd-party-native-api-i-e-cython-and-c-c">3rd-party native API (i.e. Cython and C / C++)</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="strings.html">Internals: Enhanced string / UTF-8 handling</a></li>
+<li class="toctree-l1"><a class="reference internal" href="copyonwrite.html">View semantics and Copy-On-Write</a></li>
+<li class="toctree-l1"><a class="reference internal" href="removals.html">Other miscellaneous ideas</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+        <a href="index.html">pandas 2.0 Design Docs</a>
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+ 
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="index.html">Docs</a> &raquo;</li>
+      
+    <li>Internals: Data structure changes</li>
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="_sources/internal-architecture.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="internals-data-structure-changes">
+<span id="internal-architecture"></span><h1>Internals: Data structure changes<a class="headerlink" href="#internals-data-structure-changes" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="logical-types-and-physical-storage-decoupling">
+<h2>Logical types and Physical Storage Decoupling<a class="headerlink" href="#logical-types-and-physical-storage-decoupling" title="Permalink to this headline">¶</a></h2>
+<p>Since this is the most important, but perhaps also most controversial, change
+(in my opinion) to pandas, I&#8217;m going to go over it in great detail. I think the
+hardest part is coming up with clear language and definitions for concepts so
+that we can communicate effectively. For example the term &#8220;data type&#8221; is vague
+and may mean different things to different people.</p>
+<div class="section" id="a-motivating-example">
+<h3>A motivating example<a class="headerlink" href="#a-motivating-example" title="Permalink to this headline">¶</a></h3>
+<p>Before digging too much into the technical details and problems/solutions,
+let&#8217;s look at some code examples. It is not unusual to find code like this in
+pandas&#8217;s internals:</p>
+<div class="highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">create_from_value</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">index</span><span class="p">,</span> <span class="n">dtype</span><span class="p">):</span>
+    <span class="c1"># return a new empty value suitable for the dtype</span>
+
+    <span class="k">if</span> <span class="n">is_datetimetz</span><span class="p">(</span><span class="n">dtype</span><span class="p">):</span>
+        <span class="n">subarr</span> <span class="o">=</span> <span class="n">DatetimeIndex</span><span class="p">([</span><span class="n">value</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">index</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">is_categorical_dtype</span><span class="p">(</span><span class="n">dtype</span><span class="p">):</span>
+        <span class="n">subarr</span> <span class="o">=</span> <span class="n">Categorical</span><span class="p">([</span><span class="n">value</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">index</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dtype</span><span class="p">,</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">))):</span>
+            <span class="n">dtype</span> <span class="o">=</span> <span class="n">dtype</span><span class="o">.</span><span class="n">dtype</span>
+        <span class="n">subarr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">index</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="n">subarr</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>or</p>
+<div class="highlight-python"><div class="highlight"><pre><span></span><span class="k">if</span> <span class="n">is_categorical_dtype</span><span class="p">(</span><span class="n">dtype</span><span class="p">):</span>
+    <span class="n">upcast_cls</span> <span class="o">=</span> <span class="s1">&#39;category&#39;</span>
+<span class="k">elif</span> <span class="n">is_datetimetz</span><span class="p">(</span><span class="n">dtype</span><span class="p">):</span>
+    <span class="n">upcast_cls</span> <span class="o">=</span> <span class="s1">&#39;datetimetz&#39;</span>
+<span class="k">elif</span> <span class="nb">issubclass</span><span class="p">(</span><span class="n">dtype</span><span class="o">.</span><span class="n">type</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">bool_</span><span class="p">):</span>
+    <span class="n">upcast_cls</span> <span class="o">=</span> <span class="s1">&#39;bool&#39;</span>
+<span class="k">elif</span> <span class="nb">issubclass</span><span class="p">(</span><span class="n">dtype</span><span class="o">.</span><span class="n">type</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">object_</span><span class="p">):</span>
+    <span class="n">upcast_cls</span> <span class="o">=</span> <span class="s1">&#39;object&#39;</span>
+<span class="k">elif</span> <span class="n">is_datetime64_dtype</span><span class="p">(</span><span class="n">dtype</span><span class="p">):</span>
+    <span class="n">upcast_cls</span> <span class="o">=</span> <span class="s1">&#39;datetime&#39;</span>
+<span class="k">elif</span> <span class="n">is_timedelta64_dtype</span><span class="p">(</span><span class="n">dtype</span><span class="p">):</span>
+    <span class="n">upcast_cls</span> <span class="o">=</span> <span class="s1">&#39;timedelta&#39;</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="n">upcast_cls</span> <span class="o">=</span> <span class="s1">&#39;float&#39;</span>
+</pre></div>
+</div>
+<p>I&#8217;ve cherry-picked one of a number of places where this type of datatype-based
+branching happens.</p>
+<p>The primary reason for this complexity is that pandas is using both NumPy&#8217;s
+dtype objects (which describe <em>physical storage</em>) as well as its own custom
+data type objects as a proxy for pandas&#8217;s <em>semantic logical types</em>.</p>
+<p>Let&#8217;s step back for a second and come up with clear language to steer the
+discussion.</p>
+</div>
+<div class="section" id="some-definitions">
+<h3>Some definitions<a class="headerlink" href="#some-definitions" title="Permalink to this headline">¶</a></h3>
+<p>Here is my attempt at definitions of some of the key terms:</p>
+<ul class="simple">
+<li><strong>Metadata</strong>: data that describes other data (such as its in-memory layout)</li>
+<li><strong>Semantics</strong>: The meaning / abstract interpretation of something. We often
+discuss the semantics (meaning) of computer programs (i.e. what they do,
+fundamentally) without touching upon low level details like machine
+representation, programming languages, compilers, operating systems, etc.</li>
+<li><strong>Physical data (or storage) types</strong>: these are metadata objects which
+provide a description of the precise structure of a piece of data in memory.<ul>
+<li>In NumPy, the <code class="docutils literal"><span class="pre">numpy.dtype</span></code> object (aka <code class="docutils literal"><span class="pre">PyArray_Descr</span></code> in the C API)
+is metadata describing a single cell / value in an array. Combined with the
+<code class="docutils literal"><span class="pre">shape</span></code> and <code class="docutils literal"><span class="pre">strides</span></code> attributes of the <code class="docutils literal"><span class="pre">ndarray</span></code> object, you have
+enough information to perform O(1) random access on any cell in an
+<code class="docutils literal"><span class="pre">ndarray</span></code> and to assign these values to a C type (or, in the case, of
+structured dtypes, assign to a packed C struct).</li>
+<li>This may or may not include a physical representation of NULL or missing
+data (for example: nullable float64 might be a physical type indicating a
+normal float64 array along with a bitmap of null/not-null indicators).</li>
+</ul>
+</li>
+<li><strong>Logical data type</strong>: metadata which describes the semantic content of a
+single value in an array or other collection of values. Depending on the
+logical type, it may map 1-to-1 to a physical type or not at all. Here are
+some examples:<ul>
+<li>The <code class="docutils literal"><span class="pre">double</span></code> or <code class="docutils literal"><span class="pre">float64</span></code> type may be viewed both as a logical type as
+well as a physical type (a 1-to-1 correspondence).</li>
+<li>pandas&#8217;s <code class="docutils literal"><span class="pre">category</span></code> dtype contains its own auxiliary array of category
+values (for example, the distinct strings collected from a string
+array). Based on the number of categories, the category <code class="docutils literal"><span class="pre">codes</span></code> (which
+reference the categories array) are stored in the smallest possible integer
+physical type (from <code class="docutils literal"><span class="pre">int8</span></code> to <code class="docutils literal"><span class="pre">int64</span></code>, depending whether the data type
+can accommodate the codes). For example, if there are 50 codes, the data is
+represented in <code class="docutils literal"><span class="pre">int8</span></code> storage. For 1000 codes, it would be <code class="docutils literal"><span class="pre">int16</span></code>.</li>
+<li>Another example: timestamps may be physically stored in <code class="docutils literal"><span class="pre">int64</span></code>
+storage, and these values are interpreted in the context of a particular
+time unit or resolution (e.g. nanoseconds, milliseconds, seconds).</li>
+</ul>
+</li>
+</ul>
+<p>In general, new logical types may be formed either by placing new semantics on
+top of a single physical data type or some composition of physical or logical
+types. For example: you could have a categorical type (a logical construct
+consisting of multiple arrays of data) whose categories are some other logical
+type.</p>
+<p>For historical reasons, <strong>pandas never developed a clear or clean semantic
+separation in its user API between logical and physical data types</strong>. Also, the
+addition of new, pandas-only &#8220;synthetic&#8221; dtypes that are unknown to NumPy (like
+categorical, datetimetz, etc.) has expanded this conflation considerably. If
+you also consider pandas&#8217;s custom missing / NULL data behavior, the addition of
+ad hoc missing data semantics to a physical NumPy data type created, by the
+definitions above, a logical data type (call it <code class="docutils literal"><span class="pre">object[nullable]</span></code> for an
+object array) without ever explicitly saying so.</p>
+<p>You might be thinking, &#8220;Good job, Wes. You really messed that up!&#8221; I&#8217;d be
+inclined to agree with you now in retrospect, but back in 2011 pandas was not
+the super popular project that it is today, and we were truly riding on NumPy&#8217;s
+coat tails. So the extent to which NumPy concepts and APIs were used explicitly
+in pandas made the library easier to adopt. Now in 2016, this feels
+anachronistic / outdated.</p>
+</div>
+<div class="section" id="high-level-logical-type-proposal">
+<h3>High-level logical type proposal<a class="headerlink" href="#high-level-logical-type-proposal" title="Permalink to this headline">¶</a></h3>
+<p>As we have been discussing periodically on the pandas-dev mailing list and
+GitHub, I am proposing that we start to unravel our current mess by defining
+pandas-specific metadata objects that model the current semantics / behavior of
+the project. What does this mean, exactly?</p>
+<ul class="simple">
+<li>Each NumPy dtype object will map 1-to-1 to an equivalent <code class="docutils literal"><span class="pre">pandas.DataType</span></code>
+object.</li>
+<li>Existing pandas &#8220;extension dtypes&#8221; (like <code class="docutils literal"><span class="pre">CategoricalDtype</span></code> and
+<code class="docutils literal"><span class="pre">DatetimeTZDtype</span></code>), which have been designed to mimic <code class="docutils literal"><span class="pre">numpy.dtype</span></code>, will
+become logical type subclasses of <code class="docutils literal"><span class="pre">pandas.DataType</span></code> like every other type
+in pandas.</li>
+</ul>
+<p>Since pandas is about assisting with data manipulation and analysis, at some
+point you must invoke functions that are specialized to the specific physical
+memory representation of your data. For example, pandas has its own
+implementations of <code class="docutils literal"><span class="pre">ndarray.take</span></code> that are used internally for arrays of
+positive integers that may contain NULL / NA values (which are represented as
+-1 &#8211; search the codebase for implementations of <code class="docutils literal"><span class="pre">take_1d</span></code>).</p>
+<p>The major goals of introducing a logical type abstraction are the follows:</p>
+<ul class="simple">
+<li>Simplifying &#8220;dynamic dispatch&#8221;: invoking the right functions or choosing the
+right code branches based on the data type.</li>
+<li>Enabling pandas to decouple both its internal semantics and physical storage
+from NumPy&#8217;s metadata and APIs. Note that this is already happening with
+categorical types, since a particular instance of <code class="docutils literal"><span class="pre">CategoricalDtype</span></code> may
+physically be stored in one of 4 NumPy data types.</li>
+</ul>
+</div>
+<div class="section" id="physical-storage-decoupling">
+<h3>Physical storage decoupling<a class="headerlink" href="#physical-storage-decoupling" title="Permalink to this headline">¶</a></h3>
+<p>By separating pandas data from the presumption of using a particular physical
+<code class="docutils literal"><span class="pre">numpy.dtype</span></code> internally, we can:</p>
+<ul class="simple">
+<li>Begin to better protect users from NumPy data semantics (which are frequently
+different from pandas&#8217;s!) leaking through to the pandas user API. This can
+enable us to address long-standing inconsistencies or &#8220;rough edges&#8221; in pandas
+that have persisted due to our tight semantic coupling to NumPy.</li>
+<li>We can consider adding new data structures to pandas, either custom to pandas
+or provided by 3rd-party libraries, that add new functionality alongside the
+existing code (presuming NumPy physical storage). As one concrete example,
+discussed in more detail below, we can enable missing data in integer pandas
+data by forming a composite data structure consisting of a NumPy array plus a
+bitmap marking the null / not-null values.<ul>
+<li>It may end up being a requirement that 3rd party data structures will need
+to have a C or C++ API to be used in pandas.</li>
+</ul>
+</li>
+<li>We can start to think about improved behavior around data ownership (like
+copy-on-write) which may yield many benefits. I will write a dedicated
+section about this.</li>
+</ul>
+<p>Note that neither of these points implies that we are trying to use NumPy
+less. We already have large amounts of code that implement algorithms similar
+to those found in NumPy (e.g. <code class="docutils literal"><span class="pre">pandas.unique</span></code> or the implementation of
+<code class="docutils literal"><span class="pre">Series.sum</span></code>), but taking into account pandas&#8217;s missing data representation,
+etc. Internally, we can use NumPy when its computational semantics match those
+we&#8217;ve chosen for pandas, and elsewhere we can invoke pandas-specific code.</p>
+<p>A major concern here based on these ideas is <strong>preserving NumPy
+interoperability</strong>, so I&#8217;ll examine this topic in some detail next.</p>
+</div>
+<div class="section" id="correspondence-between-logical-and-physical-types">
+<h3>Correspondence between logical and physical types<a class="headerlink" href="#correspondence-between-logical-and-physical-types" title="Permalink to this headline">¶</a></h3>
+<ul class="simple">
+<li><strong>Floating point numbers</strong><ul>
+<li>Logical: <code class="docutils literal"><span class="pre">Float16/32/64</span></code></li>
+<li>Physical: <code class="docutils literal"><span class="pre">numpy.float16/32/64</span></code>, with <code class="docutils literal"><span class="pre">NaN</span></code> for null (for backwards
+compatibility)</li>
+</ul>
+</li>
+<li><strong>Signed Integers</strong><ul>
+<li>Logical: <code class="docutils literal"><span class="pre">Int8/16/32/64</span></code></li>
+<li>Physical: <code class="docutils literal"><span class="pre">numpy.int8/16/32/64</span></code> array plus nullness bitmap</li>
+</ul>
+</li>
+<li><strong>Unsigned Integers</strong><ul>
+<li>Logical: <code class="docutils literal"><span class="pre">UInt8/16/32/64</span></code></li>
+<li>Physical: <code class="docutils literal"><span class="pre">numpy.uint8/16/32/64</span></code> array plus nullness bitmap</li>
+</ul>
+</li>
+<li><strong>Boolean</strong><ul>
+<li>Logical: <code class="docutils literal"><span class="pre">Boolean</span></code></li>
+<li>Physical: <code class="docutils literal"><span class="pre">np.bool_</span></code> (a.k.a. <code class="docutils literal"><span class="pre">np.uint8</span></code>) array plus nullness bitmap. We
+may also explore bit storage (versus bytes).</li>
+</ul>
+</li>
+<li><strong>Categorical</strong><ul>
+<li>Logical: <code class="docutils literal"><span class="pre">Categorical[T]</span></code>, where <code class="docutils literal"><span class="pre">T</span></code> is any other logical type</li>
+<li>Physical: this type is a composition of a <code class="docutils literal"><span class="pre">Int8</span></code> through <code class="docutils literal"><span class="pre">Int64</span></code>
+(depending on the cardinality of the categories) plus the categories
+array. These have the same physical representation as</li>
+</ul>
+</li>
+<li><strong>String and Binary</strong><ul>
+<li>Logical: <code class="docutils literal"><span class="pre">String</span></code> and <code class="docutils literal"><span class="pre">Binary</span></code></li>
+<li>Physical: Dictionary-encoded representation for UTF-8 and general binary
+data as described in the <cite>string section &lt;strings&gt;</cite>.</li>
+</ul>
+</li>
+<li><strong>Timestamp</strong><ul>
+<li>Logical: <code class="docutils literal"><span class="pre">Timestamp[unit]</span></code>, where unit is the resolution. Nanoseconds can
+continue to be the default unit for now</li>
+<li>Physical: <code class="docutils literal"><span class="pre">numpy.int64</span></code>, with <code class="docutils literal"><span class="pre">INT64_MIN</span></code> as the null value.</li>
+</ul>
+</li>
+<li><strong>Timedelta</strong><ul>
+<li>Logical: <code class="docutils literal"><span class="pre">Timedelta[unit]</span></code>, where unit is the resolution</li>
+<li>Physical: <code class="docutils literal"><span class="pre">numpy.int64</span></code>, with <code class="docutils literal"><span class="pre">INT64_MIN</span></code> as the null value.</li>
+</ul>
+</li>
+<li><strong>Period</strong><ul>
+<li>Logical: <code class="docutils literal"><span class="pre">Period[unit]</span></code>, where unit is the resolution</li>
+<li>Physical: <code class="docutils literal"><span class="pre">numpy.int64</span></code>, with <code class="docutils literal"><span class="pre">INT64_MIN</span></code> as the null value.</li>
+</ul>
+</li>
+<li><strong>Interval</strong><ul>
+<li>Logical: <code class="docutils literal"><span class="pre">Interval</span></code></li>
+<li>Physical: two arrays of <code class="docutils literal"><span class="pre">Timestamp[U]</span></code> &#8211; these may need to be forced to
+both be the same resolution</li>
+</ul>
+</li>
+<li><strong>Python objects</strong> (catch-all for other data types)<ul>
+<li>Logical: <code class="docutils literal"><span class="pre">Object</span></code></li>
+<li>Physical: <code class="docutils literal"><span class="pre">numpy.object_</span></code> array, with None for null values (perhaps with
+<code class="docutils literal"><span class="pre">np.NaN</span></code> also for backwards compatibility)</li>
+</ul>
+</li>
+<li><strong>Complex numbers</strong><ul>
+<li>Logical: <code class="docutils literal"><span class="pre">Complex64/128</span></code></li>
+<li>Physical: <code class="docutils literal"><span class="pre">numpy.complex64/128</span></code>, with <code class="docutils literal"><span class="pre">NaN</span></code> for null (for backwards
+compatibility)</li>
+</ul>
+</li>
+</ul>
+<p>Some notes on these:</p>
+<ul class="simple">
+<li>While a pandas (logical) type may map onto one or more physical
+representations, in general NumPy types will map directly onto a pandas
+type. Thus, existing code involving <code class="docutils literal"><span class="pre">numpy.dtype</span></code>-like objects (such as
+<code class="docutils literal"><span class="pre">'f8'</span></code> or <code class="docutils literal"><span class="pre">numpy.float64</span></code>) will continue to work.</li>
+</ul>
+</div>
+<div class="section" id="preserving-numpy-interoperability">
+<h3>Preserving NumPy interoperability<a class="headerlink" href="#preserving-numpy-interoperability" title="Permalink to this headline">¶</a></h3>
+<p>Some of types of intended interoperability between NumPy and pandas are as
+follows:</p>
+<ul class="simple">
+<li><strong>Access to internal data</strong>: Users can obtain the a <code class="docutils literal"><span class="pre">numpy.ndarray</span></code>
+(possibly a view depending on the internal block structure, more on this
+soon) in constant time and without copying the actual data. This has a couple
+other implications<ul>
+<li>Changes made to this array will be reflected in the source pandas object.</li>
+<li>If you write C extension code (possibly in Cython) and respect pandas&#8217;s
+missing data details, you can invoke certain kinds of fast custom code on
+pandas data (but it&#8217;s somewhat inflexible &#8211; see the latest discussion on
+adding a native code API to pandas).</li>
+</ul>
+</li>
+<li><strong>Ufuncs</strong>: NumPy ufuncs (like <code class="docutils literal"><span class="pre">np.sqrt</span></code> or <code class="docutils literal"><span class="pre">np.log</span></code>) can be invoked on
+pandas objects like Series and DataFrame</li>
+<li><strong>Array protocol</strong>: <code class="docutils literal"><span class="pre">numpy.asarray</span></code> will always yield some array, even if
+it discards metadata or has to create a new array. For example <code class="docutils literal"><span class="pre">asarray</span></code>
+invoked on <code class="docutils literal"><span class="pre">pandas.Categorical</span></code> yields a reconstructed array (rather than
+either the categories or codes internal arrays)</li>
+<li><strong>Interchangeability</strong>: Many NumPy methods designed to work on subclasses (or
+duck-typed classes) of <code class="docutils literal"><span class="pre">ndarray</span></code> may be used. For example <code class="docutils literal"><span class="pre">numpy.sum</span></code> may
+be used on a Series even though it does not invoke NumPy&#8217;s internal C sum
+algorithm. This means that a Series may be used as an interchangeable
+argument in a large set of functions that only know about NumPy arrays.</li>
+</ul>
+<p>By and large, I think much of this can be preserved, but there will be some API
+breakage. In particular, interchangeability is not something we can or should
+guarantee.</p>
+<p>If we add more composite data structures (Categorical can be thought of as
+one existing composite data structure) to pandas or alternate non-NumPy data
+structures, there will be cases where the semantic information in a Series
+cannot be adequately represented in a NumPy array.</p>
+<p>As one example, if we add pandas-only missing data support to integer and
+boolean data (a long requested feature), calling <code class="docutils literal"><span class="pre">np.asarray</span></code> on such data
+may not have well-defined behavior. As present, pandas is implicitly converting
+these types to <code class="docutils literal"><span class="pre">float64</span></code> (see more below), which isn&#8217;t too great. A decision
+does not need to be made now, but the benefits of solving this long-standing
+issue may merit breaking <code class="docutils literal"><span class="pre">asarray</span></code> as long as we provide an explicit way to
+obtain the original casted <code class="docutils literal"><span class="pre">float64</span></code> NumPy array (with <code class="docutils literal"><span class="pre">NaN</span></code> for NULL/NA
+values)</p>
+<p>For pandas data that does not step outside NumPy&#8217;s semantic realm, we can
+continue to provide zero-copy views in many cases.</p>
+</div>
+</div>
+<div class="section" id="missing-data-consistency">
+<h2>Missing data consistency<a class="headerlink" href="#missing-data-consistency" title="Permalink to this headline">¶</a></h2>
+<p>Once the physical memory representation has been effectively decoupled from the
+user API, we can consider various approaches to implementing missing data in a
+consistent way for every logical pandas data type.</p>
+<p>To motivate this, let&#8217;s look at some integer data:</p>
+<div class="highlight-ipython"><div class="highlight"><pre><span></span><span class="gp">In [1]: </span><span class="n">s</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">])</span>
+<span class="gt">---------------------------------------------------------------------------</span>
+<span class="ne">NameError</span><span class="g g-Whitespace">                                 </span>Traceback (most recent call last)
+<span class="nn">&lt;ipython-input-1-d29fe2c5074b&gt;</span> in <span class="ni">&lt;module&gt;</span><span class="nt">()</span>
+<span class="ne">----&gt; </span><span class="mi">1</span> <span class="n">s</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">])</span>
+
+<span class="ne">NameError</span>: name &#39;pd&#39; is not defined
+
+<span class="gp">In [2]: </span><span class="n">s</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-2-f4d5d0c0671b&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+
+<span class="gp">In [3]: </span><span class="n">s</span><span class="o">.</span><span class="n">dtype</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-3-569816fdd6d4&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s.dtype</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+
+<span class="gp">In [4]: </span><span class="n">s</span><span class="o">.</span><span class="n">values</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-4-c6d2e39e2a16&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s.values</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+</pre></div>
+</div>
+<p>If we assign a <code class="docutils literal"><span class="pre">numpy.NaN</span></code>, see what happens:</p>
+<div class="highlight-ipython"><div class="highlight"><pre><span></span><span class="gp">In [5]: </span><span class="n">s</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">NaN</span>
+<span class="gt">---------------------------------------------------------------------------</span>
+<span class="ne">NameError</span><span class="g g-Whitespace">                                 </span>Traceback (most recent call last)
+<span class="nn">&lt;ipython-input-5-ae5d6d5bc85c&gt;</span> in <span class="ni">&lt;module&gt;</span><span class="nt">()</span>
+<span class="ne">----&gt; </span><span class="mi">1</span> <span class="n">s</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">NaN</span>
+
+<span class="ne">NameError</span>: name &#39;s&#39; is not defined
+
+<span class="gp">In [6]: </span><span class="n">s</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-6-f4d5d0c0671b&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+
+<span class="gp">In [7]: </span><span class="n">s</span><span class="o">.</span><span class="n">dtype</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-7-569816fdd6d4&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s.dtype</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+
+<span class="gp">In [8]: </span><span class="n">s</span><span class="o">.</span><span class="n">values</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-8-c6d2e39e2a16&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s.values</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+</pre></div>
+</div>
+<p>The story for boolean data is similar:</p>
+<div class="highlight-ipython"><div class="highlight"><pre><span></span><span class="gp">In [9]: </span><span class="n">s</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="bp">True</span><span class="p">,</span> <span class="bp">False</span><span class="p">,</span> <span class="bp">True</span><span class="p">])</span>
+<span class="gt">---------------------------------------------------------------------------</span>
+<span class="ne">NameError</span><span class="g g-Whitespace">                                 </span>Traceback (most recent call last)
+<span class="nn">&lt;ipython-input-9-9b974089dc19&gt;</span> in <span class="ni">&lt;module&gt;</span><span class="nt">()</span>
+<span class="ne">----&gt; </span><span class="mi">1</span> <span class="n">s</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="bp">True</span><span class="p">,</span> <span class="bp">False</span><span class="p">,</span> <span class="bp">True</span><span class="p">])</span>
+
+<span class="ne">NameError</span>: name &#39;pd&#39; is not defined
+
+<span class="gp">In [10]: </span><span class="n">s</span><span class="o">.</span><span class="n">dtype</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-10-569816fdd6d4&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s.dtype</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+
+<span class="gp">In [11]: </span><span class="n">s</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">NaN</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-11-ae5d6d5bc85c&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s[2] = np.NaN</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+
+<span class="gp">In [12]: </span><span class="n">s</span><span class="o">.</span><span class="n">dtype</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-12-569816fdd6d4&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s.dtype</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+
+<span class="gp">In [13]: </span><span class="n">s</span><span class="o">.</span><span class="n">values</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-13-c6d2e39e2a16&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s.values</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+</pre></div>
+</div>
+<p>This implicit behavior appears in many scenarios, such as:</p>
+<ul class="simple">
+<li>Loading data from any source: databases, CSV files, R data files, etc.</li>
+<li>Joins or reindexing operations introducing missing data</li>
+<li>Pivot / reshape operations</li>
+<li>Time series resampling</li>
+<li>Certain types of GroupBy operations</li>
+</ul>
+<div class="section" id="a-proposed-solution">
+<h3>A proposed solution<a class="headerlink" href="#a-proposed-solution" title="Permalink to this headline">¶</a></h3>
+<p>My proposal for introducing missing data into any NumPy type outside of
+floating point (which uses <code class="docutils literal"><span class="pre">NaN</span></code> for now) and Python object (which uses
+<code class="docutils literal"><span class="pre">None</span></code> or <code class="docutils literal"><span class="pre">NaN</span></code> interchangeably) is to <strong>allocate and manage an internal
+bitmap</strong> (which the user never sees). This has numerous benefits:</p>
+<ul class="simple">
+<li>1 byte of memory overhead for each 8 values</li>
+<li>Bitmaps can propagate their nulls in C through bitwise <code class="docutils literal"><span class="pre">&amp;</span></code> or <code class="docutils literal"><span class="pre">|</span></code>
+operations, which are inexpensive.</li>
+<li>Getting and setting bits on modern hardware is CPU-inexpensive. For
+single-pass array operations (like groupbys) on large arrays this may also
+result in better CPU cache utilization (fewer main-memory reads of the
+bitmap).</li>
+<li>Hardware and SIMD &#8220;popcount&#8221; intrinsics (which can operate on 64-128 bits at
+a time) can be used to count bits and skip null-handling on segments of data
+containing no nulls.</li>
+</ul>
+<p>Notably, this is the way that PostgreSQL handles null values. For example, we
+might have:</p>
+<div class="highlight-text"><div class="highlight"><pre><span></span>[0, 1, 2, NA, NA, 5, 6, NA]
+
+     i: 7 6 5 4 3 2 1 0
+bitmap: 0 1 1 0 0 1 1 1
+</pre></div>
+</div>
+<p>Here, the convention of 1 for &#8220;not null&#8221; (a la PostgreSQL) and
+least-significant bit ordering (LSB &#8220;bit endianness&#8221;) is being used.</p>
+<p>Under the new regime, users could simply write:</p>
+<div class="highlight-python"><div class="highlight"><pre><span></span><span class="n">s</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">pandas</span><span class="o">.</span><span class="n">NA</span>
+</pre></div>
+</div>
+<p>and the data type would be unmodified. It may be necessary to write something
+akin to:</p>
+<div class="highlight-python"><div class="highlight"><pre><span></span><span class="n">s</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span> <span class="n">na_rep</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>and that would emulate the current behavior. Attempts to use <code class="docutils literal"><span class="pre">__array__`</span> <span class="pre">(for</span>
+<span class="pre">example:</span> <span class="pre">calling</span> <span class="pre">``np.sqrt</span></code> on the data) would result in an error since we
+will likely want to refuse to make a guess as for what casting behavior the
+user desires.</p>
+</div>
+<div class="section" id="tradeoffs">
+<h3>Tradeoffs<a class="headerlink" href="#tradeoffs" title="Permalink to this headline">¶</a></h3>
+<p>One potential downside of the bitmap approach is that missing data implemented
+outside of NumPy&#8217;s domain will need to be explicitly converted if it is needed
+in another library that only knows about NumPy. I argue that this is better
+than the current implicit conversion which could yield data loss (for integers
+falling outside the exact representable range for <code class="docutils literal"><span class="pre">float64</span></code>).</p>
+</div>
+</div>
+<div class="section" id="removal-of-blockmanager-new-dataframe-internals">
+<h2>Removal of BlockManager / new DataFrame internals<a class="headerlink" href="#removal-of-blockmanager-new-dataframe-internals" title="Permalink to this headline">¶</a></h2>
+<p>Deep inside the belly pandas objects, there is a data structure called
+<code class="docutils literal"><span class="pre">BlockManager</span></code> which, at a high level, is responsible for managing the
+physical arrays where the data inside a Series or DataFrame is looked
+after (also Panel / PanelND structure, even though these are on their way to
+deprecation).</p>
+<p>While this data structure has served pandas well since its birth 5 years ago
+(Summer 2011), it has a number of problems that make its removal and
+replacement with something else an attractive option.</p>
+<p>The goal of this section is to explain what the BlockManager is, why it exists
+at all, and why we should consider removing it.</p>
+<div class="section" id="what-is-blockmanager-and-why-does-it-exist">
+<h3>What is <code class="docutils literal"><span class="pre">BlockManager</span></code> and why does it exist?<a class="headerlink" href="#what-is-blockmanager-and-why-does-it-exist" title="Permalink to this headline">¶</a></h3>
+<p>The reason that <code class="docutils literal"><span class="pre">BlockManager</span></code> exists at all goes back to some ancient pandas
+history. Originally, the data in <code class="docutils literal"><span class="pre">pandas.DataFrame</span></code> was stored in a Python
+<code class="docutils literal"><span class="pre">dict</span></code> object. If you pull up pandas 0.1 or 0.2, you will see this.</p>
+<p>Since the business logic of pandas&#8217;s internals was originally implemented in
+pure Python, as it is still is (but much larger / more complex), there was a
+marked performance difference between column-oriented operations and
+row-oriented operations. The reason for this is not really a memory layout
+issue (NumPy users know about how contiguous memory access produces much better
+performance) so much as a reliance on NumPy&#8217;s two-dimensional array operations
+for carrying out pandas&#8217;s computations. So, to do anything row oriented on an
+all-numeric DataFrame, pandas would concatenate all of the columns together
+(using <code class="docutils literal"><span class="pre">numpy.vstack</span></code> or <code class="docutils literal"><span class="pre">numpy.hstack</span></code>) then use array broadcasting or
+methods like <code class="docutils literal"><span class="pre">ndarray.sum</span></code> (combined with <code class="docutils literal"><span class="pre">np.isnan</span></code> to mind missing data)
+to carry out certain operations.</p>
+<ol class="arabic simple">
+<li>pandas&#8217;s early users (i.e. AQR employees) beseeched me to address this
+performance issue. Thus <code class="docutils literal"><span class="pre">DataMatrix</span></code> was created, a roughly API-equivalent
+object whose internal storage was a 2D NumPy array, intended to be of a
+homogeneous type (e.g. <code class="docutils literal"><span class="pre">numpy.float64</span></code>). The downside of this was that if
+you inserted a string column, everything would become <code class="docutils literal"><span class="pre">numpy.object_</span></code>
+dtype. Users did not like that.</li>
+<li>It had become apparent that the dichotomy between DataFrame and DataMatrix
+(and when to use each) was harming pandas&#8217;s adoption and confusing users. So
+I set about creating a hybrid data structure that had &#8220;the best of both
+worlds&#8221;.</li>
+<li>The idea was that the BlockManager would track collections of NumPy arrays
+having the same dtype, particular as columns were inserted or removed
+(i.e. the <em>building</em> phase of the DataFrame&#8217;s lifetime).</li>
+<li>When you would invoke an operation that benefited from a single
+<em>consolidated</em> 2-dimensional ndarray of say <code class="docutils literal"><span class="pre">float64</span></code> dtype (for example:
+using <code class="docutils literal"><span class="pre">reindex</span></code> or performing a row-oriented operation), the BlockManager
+would glue together its accumulated pieces to create a single 2D ndarray of
+each data type. This is called <strong>consolidation</strong> in the codebase.</li>
+<li>Since in practice, heterogeneous DataFrames had different types interspersed
+amongst their columns, the BlockManager maintains a mapping between the
+absolute column position and the relative position within the type-specific
+2D &#8220;block&#8221;.</li>
+<li>Over time, the BlockManager has been generalized for the 1 through N
+dimensional cases, not just the 2D case, so that even Series has a lean
+&#8220;SingleBlockManager&#8221; internally.</li>
+</ol>
+<p>Another motivation for the BlockManager was to be able to create DataFrame
+objects with zero copy from two-dimensional NumPy arrays. See Jeff Reback&#8217;s
+<a class="reference external" href="http://nbviewer.jupyter.org/github/jreback/PandasTalks/blob/master/performance/may_2016/1.%20storage.ipynb">exposition on this</a>.</p>
+</div>
+<div class="section" id="drawbacks-of-blockmanager">
+<h3>Drawbacks of BlockManager<a class="headerlink" href="#drawbacks-of-blockmanager" title="Permalink to this headline">¶</a></h3>
+<p>While this data structure has enabled pandas to make it this far in life, it
+has a number of drawbacks (not a complete list):</p>
+<ol class="arabic simple">
+<li><strong>Code complexity</strong>: this has manifested in a number of ways (and probably
+others that I&#8217;m missing)<ul>
+<li>Making some of the most important algorithms in pandas fast, like joins
+and reshape operations, requires carefully constructing the precise block
+structure of the output DataFrame so that no further copying or
+consolidation will take place.</li>
+<li>Adding new custom data types to DataFrame and not losing their metadata
+(e.g. time zones or categories) has had a sort of &#8220;fan out&#8221; effect
+touching numerous parts of the BlockManager internals.</li>
+</ul>
+</li>
+<li><strong>Loss of user visibility into memory use and memory layout</strong>: With large
+data sets, some &#8220;naively&#8221; constructed DataFrame objects (e.g. from a dict of
+ndarrays) can produce a memory-doubling effect that may cause out-of-memory
+errors. Also, consolidated blocks can (depending on the version of pandas)
+result in columns having strided / non-contiguous data, resulting in
+degraded performance in column-oriented operations.</li>
+<li><strong>Unavoidable consolidation</strong>: Fairly common operations, like <code class="docutils literal"><span class="pre">read_csv</span></code>,
+may require a consolidation step after completion, which for large data may
+result in performance or memory overhead (similar to the above bullet
+point).</li>
+<li><strong>Microperformance issues / indexing slowness</strong>: since a DataFrame can be a
+sort of many-layered onion, many common pandas operations may weave through
+dozens of different functions navigating the structure of the object and
+producing the appropriate output. I will talk more about microperformance
+later.</li>
+</ol>
+</div>
+<div class="section" id="replacing-blockmanager-without-weakening-pandas">
+<h3>Replacing BlockManager without weakening pandas<a class="headerlink" href="#replacing-blockmanager-without-weakening-pandas" title="Permalink to this headline">¶</a></h3>
+<p>Our goal in replacing BlockManager would be to achieve:</p>
+<ul class="simple">
+<li>Substantially simpler code</li>
+<li>Easier extensibility with new logical types</li>
+<li>Performance on par (or better) the current implementation</li>
+<li>Better user control over memory use and layout</li>
+<li>Improved microperformance</li>
+</ul>
+<p>I believe we can do this, but it&#8217;s will require a significant inversion of the
+internal code architecture to involve a more native code and less interpreted
+Python. For example, it will be difficult or impossible to achieve comparable
+performance in row-oriented operations (on consolidated DataFrame objects) with
+pure Python code.</p>
+<p>In the next section, I will start making my case for creating a &#8220;native core&#8221;
+library where we can assemble the low level data structures, logical types, and
+memory management for pandas. Additionally, we would want to port much of
+pandas&#8217;s helper Cython code to live inside this library and operate directly on
+the internal data structures rather than being orchestrated from the Python
+interpreter level.</p>
+</div>
+</div>
+<div class="section" id="building-libpandas-in-c-11-14-for-lowest-level-implementation-tier">
+<h2>Building &#8220;libpandas&#8221; in C++11/14 for lowest level implementation tier<a class="headerlink" href="#building-libpandas-in-c-11-14-for-lowest-level-implementation-tier" title="Permalink to this headline">¶</a></h2>
+<p>Currently, pandas architecturally is structured as follows:</p>
+<ul class="simple">
+<li>Pure Python implementation of internal data structure business logic</li>
+<li>Algorithms in Cython (more often) or C (less often) to accelerate
+computationally-intensive algorithms</li>
+</ul>
+<p>While it&#8217;s overall made pandas easier to develop and maintain internally
+(perhaps increasingly less so over time!), this has had a number of drawbacks
+as we&#8217;ve discussed. I mentioned microperformance above, so about that:</p>
+<div class="section" id="microperformance">
+<h3>Microperformance<a class="headerlink" href="#microperformance" title="Permalink to this headline">¶</a></h3>
+<p>Microperformance (operations taking 1 microsecond to 1 millisecond) has
+suffered considerably as pandas&#8217;s internals have expanded to accommodate new
+use cases. Fairly simple operations, from indexing to summary statistics, may
+pass through multiple layers of scaffolding before hitting the lowest tier of
+computations. Let&#8217;s take for example:</p>
+<div class="highlight-ipython"><div class="highlight"><pre><span></span><span class="gp">In [14]: </span><span class="n">s</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">100</span><span class="p">))</span>
+<span class="gt">---------------------------------------------------------------------------</span>
+<span class="ne">NameError</span><span class="g g-Whitespace">                                 </span>Traceback (most recent call last)
+<span class="nn">&lt;ipython-input-14-9ac5e19fea7b&gt;</span> in <span class="ni">&lt;module&gt;</span><span class="nt">()</span>
+<span class="ne">----&gt; </span><span class="mi">1</span> <span class="n">s</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">100</span><span class="p">))</span>
+
+<span class="ne">NameError</span>: name &#39;pd&#39; is not defined
+
+<span class="gp">In [15]: </span><span class="n">s</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-15-17e2f89bea7e&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s.sum()</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+</pre></div>
+</div>
+<p>Profiling <code class="docutils literal"><span class="pre">s.sum()</span></code> with <code class="docutils literal"><span class="pre">%prun</span></code> in IPython, I am seeing 116 function
+calls (pandas 0.18.1). Let&#8217;s look at the microperformance:</p>
+<div class="highlight-text"><div class="highlight"><pre><span></span>In [14]: timeit s.sum()
+10000 loops, best of 3: 31.7 µs per loop
+
+In [15]: v = s.values
+
+In [16]: timeit v.sum()
+1000000 loops, best of 3: 1.07 µs per loop
+</pre></div>
+</div>
+<p>While a slightly contrived example, the internal data structures and function
+dispatch machinery add 30 microseconds of overhead. That may not be a
+compelling number, but such a method called 1 million times has an additional
+30 seconds of overhead. When you consider microperformance in the context of
+custom <code class="docutils literal"><span class="pre">groupby</span></code> operations, for example, this may not be so unrealistic.</p>
+</div>
+<div class="section" id="c-or-c-c-11-to-be-specific">
+<h3>C or C++ (C++11, to be specific)?<a class="headerlink" href="#c-or-c-c-11-to-be-specific" title="Permalink to this headline">¶</a></h3>
+<p>At the risk of instigating a religious programming language debate, pandas&#8217;s
+use of Cython in many places is very C++-like:</p>
+<ul class="simple">
+<li>Generic programming through manual code generation (now using tempita)
+instead of templates</li>
+<li>Auxiliary types and data structures as <code class="docutils literal"><span class="pre">cdef</span> <span class="pre">class</span></code> extension types</li>
+<li>Relying on Python&#8217;s reference counting for garbage collection and cleanup
+after exceptions are raised. The &#8220;blend C and Cython&#8221; style has aided
+developer productivity.</li>
+</ul>
+<p>I argue that judicious and responsible use of modern C++ (and following a
+reasonable style guide like <a class="reference external" href="http://google.github.io/styleguide/cppguide.html">Google&#8217;s guide</a>, or some slight variation)
+will enable us to:</p>
+<ul class="simple">
+<li>Simplify our existing Cython codebase by using templates (and very limited,
+template metaprogramming)</li>
+<li>Easier generic programming / inlining of data-type specific logic at compile
+time.</li>
+<li>Use RAII (exception-safe allocation) and smart pointers (<code class="docutils literal"><span class="pre">std::unique_ptr</span></code>
+and <code class="docutils literal"><span class="pre">std::shared_ptr</span></code>) to simplify memory management</li>
+<li>Can use the STL (e.g. <code class="docutils literal"><span class="pre">std::unordered_map</span></code> for some hash tables) for
+standard data structures, or incorporate other C++ data structures (e.g. from
+Google open source libraries) that have been more optimized for certain use
+cases.</li>
+<li>Define performant C++ classes modeling the current internals, with various
+mechanisms for code reuse or type-specific dynamic dispatch (i.e. through
+template classes, CRTP, or simply virtual functions).</li>
+<li>Use C++11 standard library concurrency tools to more easily create concurrent
+/ multithreaded implementations of common pandas algorithms.</li>
+</ul>
+<p>By pushing down much of the business logic into C++ (with use of the Python and
+NumPy C API where relevant), we&#8217;ll be able to achieve macroperformance on par
+or better than the current BlockManager-based implementation and handily better
+microperformance in indexing and simple analytics.</p>
+</div>
+<div class="section" id="pandas-array-types">
+<h3><code class="docutils literal"><span class="pre">pandas.Array</span></code> types<a class="headerlink" href="#pandas-array-types" title="Permalink to this headline">¶</a></h3>
+<p>My gut feeling is that we would want to create relatively simple container
+classes having a common <code class="docutils literal"><span class="pre">pandas::Array</span></code> base type in C++, each of which
+models a particular logical type. Each array type would have a corresponding
+logical type implementation, in the vein of:</p>
+<div class="highlight-c++"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">Array</span> <span class="p">{</span>
+  <span class="c1">// public API omitted</span>
+  <span class="k">private</span><span class="o">:</span>
+    <span class="n">std</span><span class="o">::</span><span class="n">shared_ptr</span><span class="o">&lt;</span><span class="n">DataType</span><span class="o">&gt;</span> <span class="n">type_</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">class</span> <span class="nc">CategoricalType</span> <span class="o">:</span> <span class="k">public</span> <span class="n">DataType</span> <span class="p">{</span>
+  <span class="c1">// implementation</span>
+
+  <span class="k">private</span><span class="o">:</span>
+    <span class="n">std</span><span class="o">::</span><span class="n">shared_ptr</span><span class="o">&lt;</span><span class="n">Array</span><span class="o">&gt;</span> <span class="n">categories_</span><span class="p">;</span>
+<span class="p">};</span>
+
+<span class="k">class</span> <span class="nc">CategoricalArray</span> <span class="o">:</span> <span class="k">public</span> <span class="n">Array</span> <span class="p">{</span>
+  <span class="k">public</span><span class="o">:</span>
+    <span class="n">std</span><span class="o">::</span><span class="n">shared_ptr</span><span class="o">&lt;</span><span class="n">Array</span><span class="o">&gt;</span> <span class="n">codes</span><span class="p">()</span> <span class="k">const</span><span class="p">;</span>
+    <span class="n">std</span><span class="o">::</span><span class="n">shared_ptr</span><span class="o">&lt;</span><span class="n">Array</span><span class="o">&gt;</span> <span class="n">categories</span><span class="p">()</span> <span class="k">const</span><span class="p">;</span>
+    <span class="c1">// rest of implementation omitted</span>
+<span class="p">};</span>
+</pre></div>
+</div>
+<p>An array containing a NumPy array will invoke <code class="docutils literal"><span class="pre">Py_DECREF</span></code> in its destructor,
+so that after construction one can proceed largely with C++ programming
+semantics without much need for manual memory management.</p>
+<p>These Array types would be wrapped and exposed to pandas developers (probably
+in Cython).</p>
+<p>We would also want to provide a public Python API to the <code class="docutils literal"><span class="pre">pandas.Array</span></code> type,
+which would be the object returned by <code class="docutils literal"><span class="pre">Series.values</span></code>. For example, at
+present we have:</p>
+<div class="highlight-ipython"><div class="highlight"><pre><span></span><span class="gp">In [16]: </span><span class="n">s</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">]</span> <span class="o">*</span> <span class="mi">2</span><span class="p">)</span>
+<span class="gt">---------------------------------------------------------------------------</span>
+<span class="ne">NameError</span><span class="g g-Whitespace">                                 </span>Traceback (most recent call last)
+<span class="nn">&lt;ipython-input-16-998a8f95695b&gt;</span> in <span class="ni">&lt;module&gt;</span><span class="nt">()</span>
+<span class="ne">----&gt; </span><span class="mi">1</span> <span class="n">s</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">]</span> <span class="o">*</span> <span class="mi">2</span><span class="p">)</span>
+
+<span class="ne">NameError</span>: name &#39;pd&#39; is not defined
+
+<span class="gp">In [17]: </span><span class="n">s</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-17-f4d5d0c0671b&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+
+<span class="gp">In [18]: </span><span class="n">s</span><span class="o">.</span><span class="n">values</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-18-c6d2e39e2a16&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s.values</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+
+<span class="gp">In [19]: </span><span class="n">s2</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s1">&#39;category&#39;</span><span class="p">)</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-19-7cec1d861668&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s2 = s.astype(&#39;category&#39;)</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+
+<span class="gp">In [20]: </span><span class="n">s2</span><span class="o">.</span><span class="n">values</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-20-0baa206a3575&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s2.values</span>
+
+<span class="go">NameError: name &#39;s2&#39; is not defined</span>
+
+<span class="gp">In [21]: </span><span class="nb">type</span><span class="p">(</span><span class="n">s2</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-21-32738d7e9e45&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 type(s2.values)</span>
+
+<span class="go">NameError: name &#39;s2&#39; is not defined</span>
+</pre></div>
+</div>
+<p>By introducing a consistent base array type, we can eliminate the current
+dichotomy between pandas&#8217;s extension dtypes and built-in NumPy physical dtypes.</p>
+<p>We could also define a limited public API for interacting with these data
+containers directly.</p>
+</div>
+<div class="section" id="index-types">
+<h3>Index types<a class="headerlink" href="#index-types" title="Permalink to this headline">¶</a></h3>
+<p>Like pandas&#8217;s current code structure, Index types would be composed from the
+Array types and some additional data structures (hash tables) for lookups and
+other index operations. These can be similarly exposed to the world via Cython
+(and wrapped in a convenient pandas.Index class).</p>
+</div>
+<div class="section" id="pandas-table">
+<h3><code class="docutils literal"><span class="pre">pandas.Table</span></code><a class="headerlink" href="#pandas-table" title="Permalink to this headline">¶</a></h3>
+<p>My recommendation is to decommission the BlockManager in favor of a much
+simpler low-level Table class, which operates more similarly to an R data.frame
+(e.g. no row index). This would look something like</p>
+<div class="highlight-c++"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">Table</span> <span class="p">{</span>
+  <span class="k">public</span><span class="o">:</span>
+    <span class="n">std</span><span class="o">::</span><span class="n">shared_ptr</span><span class="o">&lt;</span><span class="n">Array</span><span class="o">&gt;</span> <span class="n">GetColumn</span><span class="p">(</span><span class="kt">int</span> <span class="n">i</span><span class="p">);</span>
+    <span class="kt">void</span> <span class="nf">SetColumn</span><span class="p">(</span><span class="kt">int</span> <span class="n">i</span><span class="p">,</span> <span class="k">const</span> <span class="n">std</span><span class="o">::</span><span class="n">shared_ptr</span><span class="o">&lt;</span><span class="n">Array</span><span class="o">&gt;&amp;</span> <span class="n">arr</span><span class="p">);</span>
+
+    <span class="c1">// rest of public API omitted</span>
+  <span class="k">private</span><span class="o">:</span>
+    <span class="c1">// Column index, possibly not necessary</span>
+    <span class="n">std</span><span class="o">::</span><span class="n">shared_ptr</span><span class="o">&lt;</span><span class="n">Index</span><span class="o">&gt;</span> <span class="n">columns_</span><span class="p">;</span>
+
+    <span class="c1">// List of arrays</span>
+    <span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="n">shared_ptr</span><span class="o">&lt;</span><span class="n">Array</span><span class="o">&gt;&gt;</span> <span class="n">data_</span><span class="p">;</span>
+<span class="p">};</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="operators-and-dynamic-dispatch">
+<h3>Operators and dynamic dispatch<a class="headerlink" href="#operators-and-dynamic-dispatch" title="Permalink to this headline">¶</a></h3>
+<p>Under this proposed class structure, it may not make sense to add operations as
+class methods. We could possibly do something like:</p>
+<div class="highlight-c++"><div class="highlight"><pre><span></span><span class="cp">#include</span> <span class="cpf">&quot;pandas/dispatch.h&quot;</span><span class="cp"></span>
+
+<span class="c1">// other includes omitted</span>
+
+<span class="k">using</span> <span class="n">ArrayRef</span> <span class="o">=</span> <span class="n">std</span><span class="o">::</span><span class="n">shared_ptr</span><span class="o">&lt;</span><span class="n">Array</span><span class="o">&gt;</span><span class="p">;</span>
+
+<span class="k">template</span> <span class="o">&lt;</span><span class="k">typename</span> <span class="n">U</span><span class="p">,</span> <span class="k">typename</span> <span class="n">V</span><span class="o">&gt;</span>
+<span class="kr">inline</span> <span class="n">ArrayRef</span> <span class="n">TakeImpl</span><span class="p">(</span><span class="n">U</span><span class="p">,</span> <span class="n">V</span><span class="p">)</span> <span class="p">{</span>
+  <span class="c1">// Implementation omitted</span>
+<span class="p">}</span>
+
+<span class="n">ArrayRef</span> <span class="n">Take</span><span class="p">(</span><span class="n">ArrayRef</span> <span class="n">values</span><span class="p">,</span> <span class="n">ArrayRef</span> <span class="n">indices</span><span class="p">)</span> <span class="p">{</span>
+  <span class="k">return</span> <span class="n">Dispatch</span><span class="o">&lt;</span><span class="n">TakeImpl</span><span class="o">&gt;</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">indices</span><span class="p">);</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Here, the Dispatch template would generate the matrix of logical type
+combinations, some of which might throw a not implemented exception.</p>
+<p>There&#8217;s other approaches to dealing with runtime dispatch that don&#8217;t feature
+too much overhead.</p>
+</div>
+<div class="section" id="memory-accounting">
+<h3>Memory accounting<a class="headerlink" href="#memory-accounting" title="Permalink to this headline">¶</a></h3>
+<p>If pandas&#8217;s internals are encapsulated in C++ classes inside the libpandas core
+library, we could atomically track all memory allocations and deallocations to
+produce a precise accounting of the number of bytes that pandas has currently
+allocated (that are not opaque, so Python objects would only include their
+<code class="docutils literal"><span class="pre">PyObject**</span></code> array footprint).</p>
+</div>
+<div class="section" id="development-toolchain">
+<h3>Development toolchain<a class="headerlink" href="#development-toolchain" title="Permalink to this headline">¶</a></h3>
+<p>Introducing C++11 to pandas&#8217;s development toolchain will add quite a bit of
+complexity for developers, especially compared with pandas&#8217;s current Cython and
+C codebase which basically builds out of the box for most people. It would be
+better for cross-platform support to use CMake than something else (distutils
+doesn&#8217;t have adequate support for C++).</p>
+</div>
+</div>
+<div class="section" id="logical-types-for-strings-and-possibly-other-non-numeric-data">
+<h2>Logical types for strings and possibly other non-numeric data<a class="headerlink" href="#logical-types-for-strings-and-possibly-other-non-numeric-data" title="Permalink to this headline">¶</a></h2>
+<p>I believe that frequently-occurring data types, such as UTF8 strings, are
+important enough to deserve a dedicated logical pandas data type. This will
+enable us both to enforce tighter API semantics (i.e. attempts to assign a
+non-string into string data will be a <code class="docutils literal"><span class="pre">TypeError</span></code>) and improved performance
+and memory use under the hood. I will devote an entire section to talking about
+strings.</p>
+<p>In general, I would be supportive of making Python object (<code class="docutils literal"><span class="pre">numpy.object_</span></code>
+dtype) arrays the solution only for mixed-type arrays and data types for which
+pandas has no native handling.</p>
+</div>
+<div class="section" id="rd-party-native-api-i-e-cython-and-c-c">
+<h2>3rd-party native API (i.e. Cython and C / C++)<a class="headerlink" href="#rd-party-native-api-i-e-cython-and-c-c" title="Permalink to this headline">¶</a></h2>
+<p>Developers of 3rd-party projects (myself included) have often expressed a
+desire to be able to inspect, construct, or otherwise manipulate pandas objects
+(if even in a limited fashion) in compiled code (Cython, C, or C++).</p>
+<p>Per the discussion of libpandas and a native core, I would propose the
+following:</p>
+<ul class="simple">
+<li>Define public-facing <code class="docutils literal"><span class="pre">.pxd</span></code> files that allow developers to use <code class="docutils literal"><span class="pre">cimport</span></code>
+and get access to pandas&#8217;s internal extension types.</li>
+<li>Define factory function that enable fully formed Series and DataFrame objects
+to be constructed either by Cython API calls or potentially also C++
+libpandas API calls.</li>
+<li>Provide Cython APIs for 3rd-party developers to obtain pointers to access the
+underlying C++ objects contained in the wrapper Python objects</li>
+</ul>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="strings.html" class="btn btn-neutral float-right" title="Internals: Enhanced string / UTF-8 handling" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="goals.html" class="btn btn-neutral" title="Goals and Motivations" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2016, pandas Development Team.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>
