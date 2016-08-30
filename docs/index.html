@@ -1,0 +1,286 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>pandas 2.0 Design Documents &mdash; pandas 2.0 Design Docs 0.1 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+
+  
+    <link rel="top" title="pandas 2.0 Design Docs 0.1 documentation" href="#"/>
+        <link rel="next" title="Goals and Motivations" href="goals.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="#" class="icon icon-home"> pandas 2.0 Design Docs
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0.1
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <ul>
+<li class="toctree-l1"><a class="reference internal" href="goals.html">Goals and Motivations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="internal-architecture.html">Internals: Data structure changes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="strings.html">Internals: Enhanced string / UTF-8 handling</a></li>
+<li class="toctree-l1"><a class="reference internal" href="copyonwrite.html">View semantics and Copy-On-Write</a></li>
+<li class="toctree-l1"><a class="reference internal" href="removals.html">Other miscellaneous ideas</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+        <a href="#">pandas 2.0 Design Docs</a>
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+ 
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="#">Docs</a> &raquo;</li>
+      
+    <li>pandas 2.0 Design Documents</li>
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="_sources/index.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="pandas-2-0-design-documents">
+<h1>pandas 2.0 Design Documents<a class="headerlink" href="#pandas-2-0-design-documents" title="Permalink to this headline">¶</a></h1>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">These documents are a work in progress. Please see ongoing discussions on
+<a class="reference external" href="http://github.com/pydata/pandas-design">http://github.com/pydata/pandas-design</a></p>
+</div>
+<p>These are a set of documents, based on discussions started in December 2015, to
+assist with discussions around changes to Python pandas&#8217;s internal design
+intended to better accommodate the evolving needs of the growing Python data
+userbase and to help ensure that pandas remains a relevant and important
+project in the future.</p>
+<p>We also will use this place to collect ideas for things to remove (such as
+deprecated features, but possibly other things) from the library that don&#8217;t
+necessarily depend on the internal implementation.</p>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="goals.html">Goals and Motivations</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="goals.html#id1">Goals</a></li>
+<li class="toctree-l2"><a class="reference internal" href="goals.html#non-goals-faq">Non-goals / FAQ</a></li>
+<li class="toctree-l2"><a class="reference internal" href="goals.html#summary">Summary</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="internal-architecture.html">Internals: Data structure changes</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="internal-architecture.html#logical-types-and-physical-storage-decoupling">Logical types and Physical Storage Decoupling</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#a-motivating-example">A motivating example</a></li>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#some-definitions">Some definitions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#high-level-logical-type-proposal">High-level logical type proposal</a></li>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#physical-storage-decoupling">Physical storage decoupling</a></li>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#correspondence-between-logical-and-physical-types">Correspondence between logical and physical types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#preserving-numpy-interoperability">Preserving NumPy interoperability</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="internal-architecture.html#missing-data-consistency">Missing data consistency</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#a-proposed-solution">A proposed solution</a></li>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#tradeoffs">Tradeoffs</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="internal-architecture.html#removal-of-blockmanager-new-dataframe-internals">Removal of BlockManager / new DataFrame internals</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#what-is-blockmanager-and-why-does-it-exist">What is <code class="docutils literal"><span class="pre">BlockManager</span></code> and why does it exist?</a></li>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#drawbacks-of-blockmanager">Drawbacks of BlockManager</a></li>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#replacing-blockmanager-without-weakening-pandas">Replacing BlockManager without weakening pandas</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="internal-architecture.html#building-libpandas-in-c-11-14-for-lowest-level-implementation-tier">Building &#8220;libpandas&#8221; in C++11/14 for lowest level implementation tier</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#microperformance">Microperformance</a></li>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#c-or-c-c-11-to-be-specific">C or C++ (C++11, to be specific)?</a></li>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#pandas-array-types"><code class="docutils literal"><span class="pre">pandas.Array</span></code> types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#index-types">Index types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#pandas-table"><code class="docutils literal"><span class="pre">pandas.Table</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#operators-and-dynamic-dispatch">Operators and dynamic dispatch</a></li>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#memory-accounting">Memory accounting</a></li>
+<li class="toctree-l3"><a class="reference internal" href="internal-architecture.html#development-toolchain">Development toolchain</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="internal-architecture.html#logical-types-for-strings-and-possibly-other-non-numeric-data">Logical types for strings and possibly other non-numeric data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="internal-architecture.html#rd-party-native-api-i-e-cython-and-c-c">3rd-party native API (i.e. Cython and C / C++)</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="strings.html">Internals: Enhanced string / UTF-8 handling</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="strings.html#current-string-problems">Current string problems</a></li>
+<li class="toctree-l2"><a class="reference internal" href="strings.html#possible-solution-new-non-numpy-string-memory-layout">Possible solution: new non-NumPy string memory layout</a></li>
+<li class="toctree-l2"><a class="reference internal" href="strings.html#concerns-problems">Concerns / problems</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="strings.html#preserving-code-that-assumes-pystring-objects">Preserving code that assumes PyString objects</a></li>
+<li class="toctree-l3"><a class="reference internal" href="strings.html#accommodating-non-utf-8-data">Accommodating Non-UTF-8 data</a></li>
+<li class="toctree-l3"><a class="reference internal" href="strings.html#indexing-and-slicing">Indexing and slicing</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="copyonwrite.html">View semantics and Copy-On-Write</a></li>
+<li class="toctree-l1"><a class="reference internal" href="removals.html">Other miscellaneous ideas</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="removals.html#dropping-python-2-support">Dropping Python 2 support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="removals.html#deprecated-code-to-remove">Deprecated code to remove</a></li>
+<li class="toctree-l2"><a class="reference internal" href="removals.html#other-ideas">Other ideas</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="removals.html#column-statistics">Column statistics</a></li>
+<li class="toctree-l3"><a class="reference internal" href="removals.html#strided-arrays-more-trouble-than-they-are-worth">Strided arrays: more trouble than they are worth?</a></li>
+<li class="toctree-l3"><a class="reference internal" href="removals.html#enforcing-immutability-in-groupby-functions">Enforcing immutability in GroupBy functions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="removals.html#handling-of-sparse-data-structures">Handling of sparse data structures</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="goals.html" class="btn btn-neutral float-right" title="Goals and Motivations" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2016, pandas Development Team.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

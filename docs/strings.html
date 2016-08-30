@@ -1,0 +1,443 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Internals: Enhanced string / UTF-8 handling &mdash; pandas 2.0 Design Docs 0.1 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+
+  
+    <link rel="top" title="pandas 2.0 Design Docs 0.1 documentation" href="index.html"/>
+        <link rel="next" title="View semantics and Copy-On-Write" href="copyonwrite.html"/>
+        <link rel="prev" title="Internals: Data structure changes" href="internal-architecture.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> pandas 2.0 Design Docs
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0.1
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="goals.html">Goals and Motivations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="internal-architecture.html">Internals: Data structure changes</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Internals: Enhanced string / UTF-8 handling</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#current-string-problems">Current string problems</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#possible-solution-new-non-numpy-string-memory-layout">Possible solution: new non-NumPy string memory layout</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#concerns-problems">Concerns / problems</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#preserving-code-that-assumes-pystring-objects">Preserving code that assumes PyString objects</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#accommodating-non-utf-8-data">Accommodating Non-UTF-8 data</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#indexing-and-slicing">Indexing and slicing</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="copyonwrite.html">View semantics and Copy-On-Write</a></li>
+<li class="toctree-l1"><a class="reference internal" href="removals.html">Other miscellaneous ideas</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+        <a href="index.html">pandas 2.0 Design Docs</a>
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+ 
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="index.html">Docs</a> &raquo;</li>
+      
+    <li>Internals: Enhanced string / UTF-8 handling</li>
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="_sources/strings.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="internals-enhanced-string-utf-8-handling">
+<span id="strings"></span><h1>Internals: Enhanced string / UTF-8 handling<a class="headerlink" href="#internals-enhanced-string-utf-8-handling" title="Permalink to this headline">¶</a></h1>
+<p>There are some things we can do to make pandas use less memory and perform
+computations significantly faster on string data.</p>
+<div class="section" id="current-string-problems">
+<h2>Current string problems<a class="headerlink" href="#current-string-problems" title="Permalink to this headline">¶</a></h2>
+<p>pandas offers support for columns containing strings (ASCII or Unicode) on a
+somewhat ad hoc basis.</p>
+<ul class="simple">
+<li>Strings are stored in NumPy arrays of <code class="docutils literal"><span class="pre">PyObject*</span></code> / <code class="docutils literal"><span class="pre">numpy.object_</span></code>
+dtype. This has several problems<ul>
+<li>Computations (e.g. <code class="docutils literal"><span class="pre">groupby</span></code> operations) typically utilize a code path
+for generic Python objects. For example comparisons or hashing goes through
+the <code class="docutils literal"><span class="pre">PyObject_*</span></code> C API functions. In addition to harming multithreading
+due to GIL contention (you must acquire the GIL to use these functions),
+these can also be significantly slower than algorithms that operate on
+<code class="docutils literal"><span class="pre">const</span> <span class="pre">char*</span></code>, potentially taking advantage of hardware optimizations.</li>
+<li>String arrays often feature many copies of or references to the same
+PyString. Thus, some algorithms may perform redundant computation. Some
+parts of pandas, like <code class="docutils literal"><span class="pre">pandas.read_csv</span></code>, make an effort to deduplicate
+strings to free memory and accelerate computations (e.g. if you do <code class="docutils literal"><span class="pre">x</span> <span class="pre">==</span>
+<span class="pre">y</span></code>, and <code class="docutils literal"><span class="pre">x</span></code> and <code class="docutils literal"><span class="pre">y</span></code> are references to the same <code class="docutils literal"><span class="pre">PyObject*</span></code>, Python
+skips comparing their internal data).<ul>
+<li>Note that this is somewhat mitigated by using <code class="docutils literal"><span class="pre">pandas.Categorical</span></code>, but
+this is not the default storage mechanism. More on this below.</li>
+</ul>
+</li>
+<li>Using <code class="docutils literal"><span class="pre">PyString</span></code> objects and <code class="docutils literal"><span class="pre">PyObject*</span></code> NumPy storage adds non-trivial
+overhead (52 bytes in Python 3, slightly less in Python 2, see <a class="reference external" href="http://www.gahcep.com/python-internals-pyobject/">this
+exposition</a> for a
+deeper drive) to each value.</li>
+</ul>
+</li>
+</ul>
+</div>
+<div class="section" id="possible-solution-new-non-numpy-string-memory-layout">
+<h2>Possible solution: new non-NumPy string memory layout<a class="headerlink" href="#possible-solution-new-non-numpy-string-memory-layout" title="Permalink to this headline">¶</a></h2>
+<p>My proposed solution to the string conundrum is the following:</p>
+<ul class="simple">
+<li>Create a custom string array container type suitable for use in a
+<code class="docutils literal"><span class="pre">pandas.Array</span></code>, and a <code class="docutils literal"><span class="pre">pandas.string</span></code> logical data type.</li>
+<li>Require that all strings be encoded as UTF-8.</li>
+<li>By default, represent all string arrays internally as dictionary-encoded
+a.k.a. categorical. Thus, we will typically only ever have 1 copy of any
+given string in an array.</li>
+<li>Store the actual string data in a packed UTF-8 buffer. I have seen this in a
+number of places, but notably it&#8217;s the way that <a class="reference external" href="https://github.com/apache/arrow/blob/master/format/Layout.md#list-type">Apache Arrow implements
+variable-length collections</a>.</li>
+</ul>
+<p>Here is one possible C struct-like layout of this container:</p>
+<div class="highlight-c++"><div class="highlight"><pre><span></span><span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+  <span class="cm">/* Category / dictionary indices into the string data */</span>
+  <span class="kt">uint32_t</span><span class="o">*</span> <span class="n">indices</span><span class="p">;</span>
+
+  <span class="cm">/* The encoded string lengths */</span>
+  <span class="kt">uint32_t</span><span class="o">*</span> <span class="n">offsets</span><span class="p">;</span>
+
+  <span class="cm">/* The packed UTF-8 data */</span>
+  <span class="k">const</span> <span class="kt">char</span><span class="o">*</span> <span class="n">data</span><span class="p">;</span>
+
+  <span class="cm">/* For nullness */</span>
+  <span class="kt">uint8_t</span><span class="o">*</span> <span class="n">bitmap</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">string_array_t</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>Here&#8217;s an example of what the data would look like:</p>
+<div class="highlight-text"><div class="highlight"><pre><span></span>actual data : [&#39;foo&#39;, &#39;bars&#39;, &#39;foo&#39;, null, &#39;bars&#39;]
+
+indices: [0, 1, 0, 0, 1]
+
+                                 bitmap[0]
+bitmap (read right-to-left): 0 0 0 1 0 1 1 1 |
+
+offsets: [0, 3, 7]
+data: [&#39;f&#39;, &#39;o&#39;, &#39;o&#39;, &#39;b&#39;, &#39;a&#39;, &#39;r&#39;, &#39;s&#39;]
+</pre></div>
+</div>
+<p>Some benefits of this approach include:</p>
+<ul class="simple">
+<li>Much better data locality for low-cardinality categorical data</li>
+<li>8.125 bytes (8 bytes plus 1 bit) of memory overhead per value versus 33 to 52
+bytes (the current).</li>
+<li>The data is already categorical: cast to <code class="docutils literal"><span class="pre">category</span></code> dtype can be perform
+very cheaply and without duplicating the underlying string memory buffer</li>
+<li>Computations like <code class="docutils literal"><span class="pre">groupby</span></code> on dictionary-encoded strings will be as
+performant as those on Categorical currently are.  performant</li>
+</ul>
+<p>Some drawbacks</p>
+<ul class="simple">
+<li>This memory layout is best used as an immutable representation. Mutating
+slots here becomes more complex. Whether single value assignments or put /
+array-assignment may likely require constructing a new <code class="docutils literal"><span class="pre">data</span></code> buffer
+(either by <code class="docutils literal"><span class="pre">realloc</span></code> or some other copying mechanism). Without a compaction
+/ &#8220;garbage collection&#8221; step on this buffer it will be possible to have &#8220;dead&#8221;
+memory inside it (for example, if you did <code class="docutils literal"><span class="pre">arr[:]</span> <span class="pre">=</span> <span class="pre">'a-new-string-value'</span></code>,
+all the existing values would be orphaned).<ul>
+<li>Some systems have addressed this issue by storing all string data in a
+&#8220;global string hash table&#8221;. This is something we could explore, but it
+would add quite a bit of complexity to implement and may not be worthwhile
+at this time.</li>
+</ul>
+</li>
+<li>Indexing into this data structure to obtain a single Python object will
+probably want to call <code class="docutils literal"><span class="pre">PyUnicode_FromStringAndSize</span></code> to construct a string
+(Python 3, therefore Unicode). This requires a memory allocation, whereas it
+currently only has to do a <code class="docutils literal"><span class="pre">Py_INCREF</span></code>.</li>
+<li>Many of pandas&#8217;s existing algorithms assuming Python objects would need to be
+specialized to take advantage of this new memory layout. This is both a pro
+and a con as it will most likely yield significantly better performance.</li>
+</ul>
+</div>
+<div class="section" id="concerns-problems">
+<h2>Concerns / problems<a class="headerlink" href="#concerns-problems" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="preserving-code-that-assumes-pystring-objects">
+<h3>Preserving code that assumes PyString objects<a class="headerlink" href="#preserving-code-that-assumes-pystring-objects" title="Permalink to this headline">¶</a></h3>
+<p>Any alternate UTF-8 string in-memory representation should necessarily be able
+to yield Python string objects using <code class="docutils literal"><span class="pre">PyUnicode_FromStringAndSize</span></code>. Thus,
+code like this could continue to work:</p>
+<div class="highlight-ipython"><div class="highlight"><pre><span></span><span class="gp">In [1]: </span><span class="n">s</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="s2">&quot;como estás?&quot;</span><span class="p">])</span>
+<span class="gt">---------------------------------------------------------------------------</span>
+<span class="ne">NameError</span><span class="g g-Whitespace">                                 </span>Traceback (most recent call last)
+<span class="nn">&lt;ipython-input-1-9d71498eb032&gt;</span> in <span class="ni">&lt;module&gt;</span><span class="nt">()</span>
+<span class="ne">----&gt; </span><span class="mi">1</span> <span class="n">s</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="s2">&quot;como estás?&quot;</span><span class="p">])</span>
+
+<span class="ne">NameError</span>: name &#39;pd&#39; is not defined
+
+<span class="gp">In [2]: </span><span class="n">s</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">upper</span><span class="p">())</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-2-bd57401b76f7&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s.map(lambda x: x.upper())</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+</pre></div>
+</div>
+<p>One trade-off is that creating the temporary Python strings is potentially
+costly. This could be mitigated for Python <code class="docutils literal"><span class="pre">str</span></code> methods (optimized
+array-oriented code path under the hood), but for arbitrary functions you would
+have to pay.</p>
+</div>
+<div class="section" id="accommodating-non-utf-8-data">
+<h3>Accommodating Non-UTF-8 data<a class="headerlink" href="#accommodating-non-utf-8-data" title="Permalink to this headline">¶</a></h3>
+<p>Some pandas users will have code that involves various non-UTF-8 Python string
+types:</p>
+<ul class="simple">
+<li>Native unicode: Py_UCS1, Py_UCS2, Py_UCS4</li>
+<li>Non-UTF-8 PyBytes</li>
+</ul>
+<div class="highlight-ipython"><div class="highlight"><pre><span></span><span class="gp">In [3]: </span><span class="n">s</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="s2">&quot;como estás?&quot;</span><span class="p">])</span>
+<span class="gt">---------------------------------------------------------------------------</span>
+<span class="ne">NameError</span><span class="g g-Whitespace">                                 </span>Traceback (most recent call last)
+<span class="nn">&lt;ipython-input-3-9d71498eb032&gt;</span> in <span class="ni">&lt;module&gt;</span><span class="nt">()</span>
+<span class="ne">----&gt; </span><span class="mi">1</span> <span class="n">s</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="s2">&quot;como estás?&quot;</span><span class="p">])</span>
+
+<span class="ne">NameError</span>: name &#39;pd&#39; is not defined
+
+<span class="gp">In [4]: </span><span class="n">s</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-4-f4d5d0c0671b&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+
+<span class="gp">In [5]: </span><span class="n">s</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s1">&#39;latin-1&#39;</span><span class="p">)</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-5-ec79db2a61ea&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s.str.encode(&#39;latin-1&#39;)</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+
+<span class="gp">In [6]: </span><span class="n">s</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s1">&#39;latin-1&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s1">&#39;latin-1&#39;</span><span class="p">)</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-6-afaf17f9b2e9&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s.str.encode(&#39;latin-1&#39;).str.decode(&#39;latin-1&#39;)</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+</pre></div>
+</div>
+<p>Such data could arise from reading a CSV file in a non-UTF-8 encoding, and you
+did not indicate the encoding to <code class="docutils literal"><span class="pre">pandas.read_csv</span></code>.</p>
+<p>My proposed solution to this is to provide a <code class="docutils literal"><span class="pre">binary</span></code> logical type having the
+same physical memory layout as UTF-8 strings, with only the metadata being
+different. So you would have the following semantics:</p>
+<ul class="simple">
+<li><code class="docutils literal"><span class="pre">latin1_s</span> <span class="pre">=</span> <span class="pre">s.encode('latin-1')</span></code>: this yields a <code class="docutils literal"><span class="pre">binary</span></code> view and
+allocates new memory.</li>
+<li><code class="docutils literal"><span class="pre">utf8_s</span> <span class="pre">=</span> <span class="pre">s.encode('utf-8')</span></code>: this is a no-op, but yields a <code class="docutils literal"><span class="pre">binary</span></code> view.</li>
+<li><code class="docutils literal"><span class="pre">s2</span> <span class="pre">=</span> <span class="pre">utf8_s.decode('utf-8')</span></code>: this requires using a Unicode codec to
+validate indicated codec.</li>
+</ul>
+</div>
+<div class="section" id="indexing-and-slicing">
+<h3>Indexing and slicing<a class="headerlink" href="#indexing-and-slicing" title="Permalink to this headline">¶</a></h3>
+<p>Storing strings as UTF-8 bytes means that things like this become more
+complicated:</p>
+<div class="highlight-ipython"><div class="highlight"><pre><span></span><span class="gp">In [7]: </span><span class="n">s</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="s2">&quot;estás está estáis&quot;</span><span class="p">])</span>
+<span class="gt">---------------------------------------------------------------------------</span>
+<span class="ne">NameError</span><span class="g g-Whitespace">                                 </span>Traceback (most recent call last)
+<span class="nn">&lt;ipython-input-7-becbd514f545&gt;</span> in <span class="ni">&lt;module&gt;</span><span class="nt">()</span>
+<span class="ne">----&gt; </span><span class="mi">1</span> <span class="n">s</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="s2">&quot;estás está estáis&quot;</span><span class="p">])</span>
+
+<span class="ne">NameError</span>: name &#39;pd&#39; is not defined
+
+<span class="gp">In [8]: </span><span class="n">s</span><span class="o">.</span><span class="n">str</span><span class="p">[</span><span class="mi">9</span><span class="p">]</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-8-c40e0c6ca094&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s.str[9]</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+
+<span class="gp">In [9]: </span><span class="n">s</span><span class="o">.</span><span class="n">str</span><span class="p">[</span><span class="mi">6</span><span class="p">:</span><span class="mi">10</span><span class="p">]</span>
+<span class="go">                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   ---------------------------------------------------------------------------</span>
+<span class="go">NameError                                 Traceback (most recent call last)</span>
+<span class="go">&lt;ipython-input-9-d466580512f8&gt; in &lt;module&gt;()</span>
+<span class="go">----&gt; 1 s.str[6:10]</span>
+
+<span class="go">NameError: name &#39;s&#39; is not defined</span>
+</pre></div>
+</div>
+<p>Since UTF-8 is a variable length encoding, finding the logical character by
+position will need to make use of the Python C API (expensive, requires
+creating new Python objects) or a 3rd party library. We could make use of the
+<a class="reference external" href="http://site.icu-project.org/">ICU C++ Libraries</a> to implement this.</p>
+</div>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="copyonwrite.html" class="btn btn-neutral float-right" title="View semantics and Copy-On-Write" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="internal-architecture.html" class="btn btn-neutral" title="Internals: Data structure changes" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2016, pandas Development Team.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>
