@@ -186,7 +186,12 @@ def _expand_user(filepath_or_buffer):
                                   input if not expandable
     """
     if isinstance(filepath_or_buffer, string_types):
-        return os.path.expanduser(filepath_or_buffer)
+        try:
+            import dwgstore.storage as dwg
+            return dwg._expand_user(filepath_or_buffer)
+        except:
+            return os.path.expanduser(filepath_or_buffer)
+        #return os.path.expanduser(filepath_or_buffer)
     return filepath_or_buffer
 
 
